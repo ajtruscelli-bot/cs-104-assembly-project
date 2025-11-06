@@ -52,6 +52,9 @@ _main:				// Start of main function
 	// The number of arguments we have lives in register x0
 	// If we don't have exactly 2 arguments, go to the error function
 
+	cmp	x0, #2			// check argc == 2
+	bne	error			// if not, go to error
+
 	ldr	x0, [x1, #8]	// Puts the file name into register x0.
 
 	// The line above puts the file name into the first argument
@@ -60,14 +63,18 @@ _main:				// Start of main function
 	// How did we say to do that in class?
 	// The second argument is always put into the x1 register
 
-	mov	x16, #5		// Put the number 5 into register x16 (open)
-	svc	#0x80		// Call the open function with 2 arguments
+	mov	w1, #0		// flags = 0 (read-only)
+	bl	_open		// call libc open(filename, 0)
 
 	// Here, we need to check the number that the open function gives
 	// back to us.
 	// If the number is less than 0, we should go to the error function
 	// Whenever a function gives you back a number, that number will
 	// live in the x0 register.
+
+	cmp	x0, #0
+	blt	error		// if fd < 0 -> error
+	mov	x20, x0		// save fd in x20
 
 	// Now, we should save the number the open function gave back to us
 	// Let's say it to the x20 register (for reason outside this class,
@@ -86,6 +93,9 @@ _main:				// Start of main function
 	// number of bytes we need isn't divisible by 8, round up to the
 	// next multiple of 8.
 
+	sub	sp, sp, #16	// allocate 16 bytes (aligned) for buffer (8 bytes needed)
+	// buffer will be at [sp] (use sp directly)
+
 loop:				// Start of the loop function
 	// The loop function is where all the real work happens.
 
@@ -97,8 +107,10 @@ loop:				// Start of the loop function
 	// Finally, we put 1 into x2. The x2 register is always the third
 	// argument for a function.
 
-	mov	x16, #3		// Put the number 3 into register x16 (read)
-	svc	#0x80		// Call the read function with 3 arguments
+	mov	x0, x20		// fd
+	mov	x1, sp		// buf
+	mov	w2, #1		// count = 1
+	bl	_read		// call read(fd, buf, 1)
 
 	// After we read in a letter, we need to put that letter on the
 	// screen.
@@ -106,21 +118,34 @@ loop:				// Start of the loop function
 	// in the second argument, and put 1 in the third argument
 	// A 1 in the first argument is shorthand for the screen
 
-	mov	x16, #4		// Put the number 4 into register x16 (write)
-	svc	#0x80		// Call the write function with 3 arguments
+	cmp	x0, #0
+	beq	done		// if read returned 0 -> EOF -> done
+	cmp	x0, #1
+	bne	error		// if read didn't return 1 -> error
+
+	mov	x0, x20		// fd (write to same fd; can also use 1 for stdout if desired)
+	mov	x1, sp		// buf
+	mov	w2, #1		// count = 1
+	bl	_write		// call write(fd, buf, 1)
 
 	// Now we need to check to see if the number we got back from the
 	// write function is 1. If it is not equal to 1, then we should go
 	// to the error function because it means something bad happened.
+
+	cmp	x0, #1
+	bne	error
 
 	// Last sub-problem for the loop function: if we got all the way
 	// here, it means everything was success for this letter and we
 	// should jump back to the top of the loop function so we can do
 	// it all again with the next letter.
 
+	b	loop
+
 error:				// Start of the error function
 	// You don't need to do anything with the error and done functions.
-	mov	x0, #1		// Put the number 1 into register x0
+	mov	w0, #1		// Put the number 1 into register x0
+	bl	_exit		// exit(1)
 done:				// Start of the done function
-	mov	x16, #1		// Put the number 1 into register x16 (exit)
-	svc	#0x80		// Call the exit function with 1 argument
+	mov	w0, #0		// return 0
+	bl	_exit		// exit(0)
